@@ -1,7 +1,7 @@
 ---
 name: chat-history-import
 description: Use when the user wants to import external chat exports into OpenClaw. This skill normalizes raw chat history into conversation-archive-compatible JSONL, then guides the model to distill daily memory and `MEMORY.md` candidates before applying merges with user confirmation.
-metadata: { "openclaw": { "emoji": "🗂️", "homepage": "https://github.com/dashhuang/openclaw/tree/main/skills/chat-history-import", "requires": { "bins": ["python3"] } } }
+metadata: { "openclaw": { "emoji": "🗂️", "homepage": "https://github.com/dashhuang/openclaw-chat-history-import", "requires": { "bins": ["python3"] } } }
 ---
 
 # Chat History Import
@@ -14,6 +14,23 @@ Use this skill when a user wants to import chat history from Claude, ChatGPT, Sl
 - daily memory distillation into `memory/YYYY-MM-DD.md`
 - `MEMORY.md` candidate generation
 - review and apply workflow for memory merges
+
+## Related OpenClaw Components
+
+This skill is not a replacement for the live archive plugin or archive search skill.
+
+- `conversation-archive` plugin
+  - Recommended when the workspace wants future live chats written into the same `logs/message-archive-raw/` tree.
+  - This skill should emit archive files that are fully compatible with that plugin's raw archive layout.
+- `conversation-history` skill
+  - Strongly recommended when the user wants agents to search imported history after import.
+  - This import skill writes archive files; it does not replace archive recall/search workflows on its own.
+
+Preferred combined setup:
+
+1. use `chat-history-import` to backfill old history
+2. use `conversation-archive` to keep new history flowing in
+3. use `conversation-history` to search both imported and live archive data
 
 ## What Scripts Do vs. What The Model Does
 
@@ -48,7 +65,7 @@ For unknown input formats, the model may need to inspect the source and write a 
 
 1. Do not import external history into `agents/<agentId>/sessions/`.
 2. Treat `logs/message-archive-raw/` as the canonical destination for imported raw chat history.
-3. Imported archive output must pass `{baseDir}/scripts/validate_archive.py`.
+3. Imported archive output must pass `{baseDir}/scripts/validate_archive.py` and stay compatible with the `conversation-archive` plugin's archive contract.
 4. Daily memory should merge into the existing `memory/YYYY-MM-DD.md` file for that date.
 5. Daily memory body should look like normal OpenClaw memory: concise Chinese bullets, minimal metadata, no “Claude 备份里显示” phrasing.
 6. Use a short HTML comment only to mark import provenance.
@@ -65,6 +82,12 @@ python3 {baseDir}/scripts/inspect_import.py /path/to/archive-or-file
 ```
 
 Use local file structure first. Use web research only as fallback for unclear formats.
+
+When helpful, check whether the current workspace already has `conversation-archive` and `conversation-history` available, so the user can be told what will happen after import:
+
+- archive-only import
+- import plus future live archive
+- import plus searchable archive recall
 
 ### 2. Normalize Raw Archive
 
@@ -104,6 +127,8 @@ Guardrails for temporary parsers:
 - do not write directly into `MEMORY.md`
 - do not bypass the archive validator
 - keep source-specific logic isolated; do not pollute the skill with one-off code unless the format is worth supporting permanently
+
+If a bundled parser is missing for a format that seems broadly reusable, mention that it may be worth promoting the temporary parser into a maintained parser later.
 
 ### 3. Distill Daily Memory
 
@@ -274,6 +299,8 @@ When reporting progress or completion, include:
 
 - Do not claim imported archive compatibility unless validation passes.
 - Do not describe the current import as failed when only pre-existing archive files failed full-archive validation.
+- Do not imply that imported history will automatically be searchable unless the workspace also has an archive-retrieval workflow such as `conversation-history`.
+- Do not imply that future live chats will keep flowing into the same archive tree unless `conversation-archive` or equivalent live archive plumbing is enabled.
 - Do not let imported daily memory read like a profile summary.
 - Do not silently overwrite existing `MEMORY.md` facts.
 - Do not add bulky metadata into daily memory bodies.
