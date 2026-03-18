@@ -27,6 +27,52 @@ This bundle is designed for interactive, review-first migration from Claude expo
 
 这个 bundle 面向交互式、先审阅再落盘的迁移流程，适合 Claude 导出、ChatGPT 导出、Slack 风格转储，以及其他结构化或半结构化聊天存档。
 
+## Common Sources
+
+## 常见来源
+
+The most common use case is importing history from previous AI chat tools, especially ChatGPT and Claude.
+
+最常见的使用场景，是把你在其他 AI 聊天工具里的旧历史导入进来，尤其是 ChatGPT 和 Claude。
+
+### ChatGPT export
+
+### ChatGPT 导出
+
+As of 2026-03-19, the usual path is:
+
+截至 2026-03-19，常见导出路径是：
+
+- ChatGPT
+- `Settings`
+- `Data Controls`
+- `Export`
+
+That export usually arrives as a ZIP and commonly includes files such as `conversations.json`.
+
+导出的结果通常是一个 ZIP，里面常见会有 `conversations.json` 之类的文件。
+
+### Claude export
+
+### Claude 导出
+
+As of 2026-03-19, the usual path is:
+
+截至 2026-03-19，常见导出路径是：
+
+- Claude
+- `Settings`
+- `Privacy`
+- `Export data`
+
+That export also typically arrives as a ZIP and may include files such as `conversations.json`, `memories.json`, `projects.json`, and account metadata.
+
+导出的结果通常也是一个 ZIP，里面可能包含 `conversations.json`、`memories.json`、`projects.json` 以及账户元数据。
+
+If the source is not ChatGPT or Claude, this bundle can still help, but the import may need model-assisted format inspection or a temporary parser.
+
+如果来源不是 ChatGPT 或 Claude，这个 bundle 也仍然可以尝试导入，只是更可能需要模型辅助识别格式，或者临时写一个 parser。
+
 ## Included Skills
 
 ## 包含的 Skills

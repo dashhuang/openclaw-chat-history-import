@@ -8,6 +8,14 @@ metadata: { "openclaw": { "emoji": "🗂️", "homepage": "https://github.com/da
 
 Use this skill when a user wants to import chat history from Claude, ChatGPT, Slack exports, markdown logs, JSON/JSONL transcripts, or similar archives into an OpenClaw workspace.
 
+The most common source formats for this skill are ChatGPT exports and Claude exports.
+If the user has not exported data yet, suggest the usual official export entry points first:
+
+- ChatGPT: `Settings -> Data Controls -> Export`
+- Claude: `Settings -> Privacy -> Export data`
+
+These exports usually arrive as ZIP files and are good candidates for the built-in import flow.
+
 ## What This Skill Owns
 
 - raw archive import into `logs/message-archive-raw/`
