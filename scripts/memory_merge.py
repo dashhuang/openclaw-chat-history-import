@@ -80,6 +80,14 @@ def find_footer_start(lines: list[str]) -> int:
     return len(lines)
 
 
+def line_starts_new_block(stripped: str) -> bool:
+    return (
+        stripped.startswith(IMPORT_MARKER_PREFIX)
+        or stripped.startswith("#")
+        or stripped == "---"
+    )
+
+
 def merge_daily_block(existing: str, entry: dict[str, Any]) -> str:
     provider = str(entry.get("source_provider") or "imported").strip().lower()
     new_block = render_daily_block(entry)
@@ -94,9 +102,7 @@ def merge_daily_block(existing: str, entry: dict[str, Any]) -> str:
             end = idx + 1
             while end < len(lines):
                 next_line = lines[end].strip()
-                if next_line.startswith(IMPORT_MARKER_PREFIX):
-                    break
-                if next_line.startswith("# "):
+                if line_starts_new_block(next_line):
                     break
                 end += 1
             break
@@ -140,7 +146,7 @@ def split_section_bounds(lines: list[str], heading: str) -> tuple[int, int] | No
     end = len(lines)
     for idx in range(start + 1, len(lines)):
         stripped = lines[idx].strip()
-        if stripped.startswith("## "):
+        if stripped.startswith("## ") or stripped == "---":
             end = idx
             break
     return start, end
@@ -159,7 +165,7 @@ def replace_or_append_import_block(lines: list[str], start: int, end: int, entry
             block_end = idx + 1
             while block_end < end:
                 next_line = lines[block_end].strip()
-                if next_line.startswith(IMPORT_MARKER_PREFIX) or next_line.startswith("## "):
+                if line_starts_new_block(next_line):
                     break
                 block_end += 1
             break
