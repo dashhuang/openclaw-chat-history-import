@@ -23,15 +23,23 @@ jobs:
           from pathlib import Path
           import re
           import yaml
-          text = Path("SKILL.md").read_text(encoding="utf-8")
-          match = re.match(r"^---\n(.*?)\n---", text, re.S)
-          assert match, "missing frontmatter"
-          data = yaml.safe_load(match.group(1))
-          assert data["name"] == "chat-history-import"
-          assert "description" in data
-          assert "metadata" in data
+          expected = {
+              "SKILL.md": "chat-history-import",
+              "conversation-history/SKILL.md": "conversation-history",
+          }
+          for rel, name in expected.items():
+              text = Path(rel).read_text(encoding="utf-8")
+              match = re.match(r"^---\n(.*?)\n---", text, re.S)
+              assert match, f"missing frontmatter: {rel}"
+              data = yaml.safe_load(match.group(1))
+              assert data["name"] == name, f"unexpected name in {rel}"
+              assert "description" in data, f"missing description in {rel}"
+          root_text = Path("SKILL.md").read_text(encoding="utf-8")
+          assert "metadata" in yaml.safe_load(re.match(r"^---\n(.*?)\n---", root_text, re.S).group(1))
           print("frontmatter ok")
           PY
 
       - name: Compile scripts
-        run: python -m py_compile scripts/*.py
+        run: |
+          python -m py_compile scripts/*.py
+          python -m py_compile conversation-history/scripts/*.py
