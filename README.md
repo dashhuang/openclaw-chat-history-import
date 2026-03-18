@@ -1,8 +1,24 @@
 # OpenClaw Chat History Import
 
-An OpenClaw skill bundle for importing external chat exports and searching imported archive history.
+An OpenClaw skill bundle for turning your past AI chat history into OpenClaw's own memory.
 
-这是一个 OpenClaw skill bundle，用来导入外部聊天导出，并在导入后搜索归档历史。
+这是一个 OpenClaw skill bundle，核心用途是把你过去在其他 AI 工具里的聊天记录，导入到 OpenClaw 里，变成龙虾自己的记忆。
+
+It helps migrate old conversations from tools like ChatGPT and Claude into OpenClaw, so that past chat history can become:
+
+它适合把 ChatGPT、Claude 等工具里的旧聊天迁移进 OpenClaw，让这些历史记录变成：
+
+- searchable raw archive
+- daily memory
+- `MEMORY.md`
+
+- 可搜索的原始 archive
+- 每日记忆
+- `MEMORY.md`
+
+In short: instead of leaving your old AI conversations stranded across different products, this bundle helps bring them into OpenClaw's own memory system.
+
+一句话说：它不是把旧聊天继续留在别的 AI 产品里，而是把它们收进 OpenClaw 自己的记忆系统里。
 
 The bundle currently includes two companion skills:
 
