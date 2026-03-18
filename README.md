@@ -1,90 +1,100 @@
 # OpenClaw Chat History Import
 
-An OpenClaw skill bundle centered on importing external chat exports into:
+An OpenClaw skill bundle for importing external chat exports and searching imported archive history.
+
+这是一个 OpenClaw skill bundle，用来导入外部聊天导出，并在导入后搜索归档历史。
+
+The bundle currently includes two companion skills:
+
+这个仓库目前包含两个互相配合的 skill：
+
+- `chat-history-import`
+- `conversation-history`
+
+`chat-history-import` imports external history into:
+
+`chat-history-import` 会把外部聊天历史导入到：
 
 - `logs/message-archive-raw/`
 - `memory/YYYY-MM-DD.md`
 - `MEMORY.md`
 
-It is designed for interactive, review-first migration of chat history from sources such as Claude exports, ChatGPT exports, Slack-style transcripts, and other structured or semi-structured chat archives.
+`conversation-history` searches archive files later, so agents can recall old decisions, links, wording, and chronology.
 
-This repository now contains two companion skills:
+`conversation-history` 用来在导入后搜索 archive 文件，方便 agent 回忆旧决策、旧链接、原话和时间线。
 
-- root `chat-history-import/`
-  - imports and reviews external history
-- `conversation-history/`
-  - searches imported archive files later
+This bundle is designed for interactive, review-first migration from Claude exports, ChatGPT exports, Slack-style transcripts, and other structured or semi-structured chat archives.
 
-They pair especially well with our `conversation-archive` plugin, which keeps future live chats flowing into the same raw archive tree.
-
-## What It Does
-
-- inspects external export files
-- normalizes messages into `conversation-archive`-compatible JSONL
-- validates imported archive shape
-- stages and applies model-authored daily memory merges
-- stages and applies review-gated `MEMORY.md` merges
+这个 bundle 面向交互式、先审阅再落盘的迁移流程，适合 Claude 导出、ChatGPT 导出、Slack 风格转储，以及其他结构化或半结构化聊天存档。
 
 ## Included Skills
+
+## 包含的 Skills
 
 ### `chat-history-import`
 
 The main import workflow.
 
-Use it to:
+主导入工作流。
 
-- inspect export files
-- normalize raw history into `logs/message-archive-raw/`
-- distill daily memory
-- stage `MEMORY.md` candidates for review
+Use it to inspect export files, normalize raw history into `logs/message-archive-raw/`, distill daily memory, and stage `MEMORY.md` candidates for review.
+
+它负责检查导出文件、把原始聊天规范化写入 `logs/message-archive-raw/`、提炼 daily memory，并生成待审阅的 `MEMORY.md` 候选内容。
 
 ### `conversation-history`
 
 The companion retrieval workflow.
 
-Use it after import when an agent needs to:
+配套的历史检索工作流。
 
-- search old decisions
-- find exact wording
-- retrieve old links
-- confirm chronology from raw archive files
+Use it after import when an agent needs to search old decisions, exact wording, old links, or chronology from raw archive files.
+
+在导入完成后，如果 agent 需要查找旧决策、原话、旧链接或时间线，就使用它来搜索 raw archive 文件。
 
 ## Recommended Companion Components
+
+## 推荐搭配组件
 
 ### `conversation-archive` plugin
 
 Recommended, but not required.
 
-Use it when you want imported history and future live chat history to live under the same archive layout:
+推荐安装，但不是硬依赖。
 
-- imported history from this skill goes into `logs/message-archive-raw/`
-- future live messages from the plugin also go into `logs/message-archive-raw/`
+Use it when you want imported history and future live chat history to live under the same archive layout.
 
-That makes one consistent archive tree instead of a one-off import silo.
-
-### `conversation-history` skill
-
-Strongly recommended.
-
-This import skill writes archive files, but it does not replace search and recall workflows by itself.
-If you want an OpenClaw agent to answer questions like “what did we decide last month?” or “find the old link from Telegram,” you should also install a history-search skill such as `conversation-history`.
+如果你希望“导入的旧历史”和“未来实时聊天历史”都落到同一套 archive 目录结构里，就应该搭配它使用。
 
 In practice:
 
-- `chat-history-import` writes history
-- `conversation-history` searches history
+实际效果是：
+
+- `chat-history-import` backfills old history
 - `conversation-archive` keeps new history flowing in
+- `conversation-history` searches both imported and live archive data
+
+- `chat-history-import` 负责补历史
+- `conversation-archive` 负责持续写入新消息
+- `conversation-history` 负责搜索导入历史和实时归档
 
 ## Requirements
+
+## 依赖
 
 - OpenClaw
 - `python3`
 
 ## Install
 
+## 安装
+
 ### Install `chat-history-import`
 
+### 安装 `chat-history-import`
+
 Copy the repository root into:
+
+把仓库根目录复制到：
 
 ```text
 <workspace>/skills/chat-history-import
@@ -92,7 +102,11 @@ Copy the repository root into:
 
 ### Install `conversation-history`
 
+### 安装 `conversation-history`
+
 Copy the companion skill directory into:
+
+把配套 skill 目录复制到：
 
 ```text
 <workspace>/skills/conversation-history
@@ -100,7 +114,11 @@ Copy the companion skill directory into:
 
 ### Shared on one machine
 
+### 单机共享安装
+
 For shared install, copy:
+
+如果想做共享安装，复制到：
 
 ```text
 ~/.openclaw/skills/chat-history-import
@@ -109,6 +127,8 @@ For shared install, copy:
 
 Then start a new OpenClaw session or run:
 
+然后启动一个新的 OpenClaw session，或者运行：
+
 ```bash
 openclaw skills info chat-history-import
 openclaw skills info conversation-history
@@ -116,17 +136,31 @@ openclaw skills info conversation-history
 
 ## Duplicate Install Notes
 
+## 重复安装说明
+
 If OpenClaw already provides `conversation-history` from a plugin or shared skills directory, avoid installing a second copy into the same scope.
 
+如果 OpenClaw 已经通过插件或 shared skills 目录提供了 `conversation-history`，就不要在同一个 scope 里再装第二份。
+
 Practical rule:
+
+实践上建议这样处理：
 
 - one `conversation-history` per scope is best
 - workspace-local copies typically override shared copies
 - if both exist, check `openclaw skills info conversation-history` to see which source is active
 
+- 每个 scope 最好只保留一份 `conversation-history`
+- workspace-local 通常会覆盖 shared 版本
+- 如果两份都在，运行 `openclaw skills info conversation-history` 看当前实际生效的是哪一份
+
 ## Publish To ClawHub
 
+## 发布到 ClawHub
+
 For the import skill at repo root:
+
+发布仓库根目录的导入 skill：
 
 ```bash
 clawhub publish . \
@@ -139,6 +173,8 @@ clawhub publish . \
 
 For the companion retrieval skill:
 
+发布配套的检索 skill：
+
 ```bash
 clawhub publish ./conversation-history \
   --slug conversation-history \
@@ -150,6 +186,8 @@ clawhub publish ./conversation-history \
 
 ## Validate Locally
 
+## 本地校验
+
 ```bash
 python3 -m py_compile scripts/*.py
 python3 -m py_compile conversation-history/scripts/*.py
@@ -158,8 +196,10 @@ openclaw skills info chat-history-import
 
 ## Repository Layout
 
+## 仓库结构
+
 - `SKILL.md`
-  OpenClaw skill entrypoint and workflow instructions.
+  OpenClaw skill entrypoint and workflow instructions for `chat-history-import`.
 - `conversation-history/`
   Companion archive retrieval skill.
 - `references/`
@@ -167,6 +207,17 @@ openclaw skills info chat-history-import
 - `scripts/`
   Deterministic helpers for inspect, normalize, validate, and merge.
 
+- `SKILL.md`
+  `chat-history-import` 的 OpenClaw skill 入口和工作流说明。
+- `conversation-history/`
+  配套的 archive 检索 skill。
+- `references/`
+  archive schema 与 memory 提炼提示词模板。
+- `scripts/`
+  用于 inspect、normalize、validate 和 merge 的确定性辅助脚本。
+
 ## License
+
+## 许可证
 
 MIT
