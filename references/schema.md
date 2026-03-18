@@ -47,7 +47,7 @@ Use this full object shape when possible:
   "timestamp_local": "2026-03-18T18:35:19+13:00",
   "local_date": "2026-03-18",
   "local_time": "18:35:19",
-  "workspace": "/path/to/workspace",
+  "workspace": "/Users/dash/.openclaw/workspace",
   "agent_id": "main",
   "channel": "claude",
   "chat_type": "direct",
@@ -162,7 +162,7 @@ If the source does not provide message IDs, generate a stable synthetic ID from 
 Use:
 
 ```bash
-python3 scripts/validate_archive.py logs/message-archive-raw
+python3 skills/chat-history-import/scripts/validate_archive.py logs/message-archive-raw
 ```
 
 The validator must pass before claiming compatibility.
@@ -179,3 +179,5 @@ The validator must pass before claiming compatibility.
   Writes review artifacts and applies model-authored daily or `MEMORY.md` payloads.
 - `scripts/validate_archive.py`
   Enforces archive path and field compatibility.
+- `scripts/build_review_checklist.py`
+  Builds a date-by-date review checklist for Plan Mode daily-memory review, with counts and optional Markdown/JSON outputs.

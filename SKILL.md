@@ -1,7 +1,7 @@
 ---
 name: chat-history-import
 description: Use when the user wants to import external chat exports into OpenClaw. This skill normalizes raw chat history into conversation-archive-compatible JSONL, then guides the model to distill daily memory and `MEMORY.md` candidates before applying merges with user confirmation.
-metadata: { "openclaw": { "emoji": "🗂️", "homepage": "https://github.com/dashhuang/openclaw-chat-history-import", "requires": { "bins": ["python3"] } } }
+metadata: { "openclaw": { "emoji": "🗂️", "homepage": "https://github.com/dashhuang/openclaw/tree/main/skills/chat-history-import", "requires": { "bins": ["python3"] } } }
 ---
 
 # Chat History Import
@@ -24,6 +24,13 @@ Scripts handle deterministic work:
 - validate archive compatibility
 - write review artifacts
 - apply approved memory merges
+
+Validation must be reported in two layers when relevant:
+
+- `import-batch validation`: whether the files written by this import are valid
+- `full-archive validation`: whether the entire existing archive tree is valid
+
+If full-archive validation fails because of pre-existing files outside this import batch, do not describe the new import itself as failed. Report the historical archive issue separately.
 
 The model handles semantic work:
 
@@ -68,6 +75,13 @@ python3 {baseDir}/scripts/normalize_import.py /path/to/archive --archive-root lo
 python3 {baseDir}/scripts/validate_archive.py logs/message-archive-raw
 ```
 
+After validation, explicitly separate these outcomes:
+
+1. whether the newly written files from this import batch are valid
+2. whether the pre-existing archive tree is fully valid
+
+If validation errors point to old archive files unrelated to the current import, report that clearly as a historical archive issue rather than an import-batch failure.
+
 ## Unknown Format Handling
 
 When the bundled parser does not recognize the input format, use this fallback sequence:
@@ -95,6 +109,30 @@ Guardrails for temporary parsers:
 
 This step is model-driven.
 
+Before writing any daily memory, switch into Plan Mode (or an equivalent explicit checklist workflow) and review the import one date at a time.
+
+Use the helper script to build the review checklist whenever possible:
+
+```bash
+python3 {baseDir}/scripts/build_review_checklist.py logs/message-archive-raw \
+  --source-archive <archive-name> \
+  --source-provider <provider> \
+  --md-out tmp/chat-import-review-checklist.md \
+  --json-out tmp/chat-import-review-checklist.json
+```
+
+This helper gives you a date-by-date checklist with entry counts so the Plan Mode review can be explicit and auditable.
+
+Required review process:
+
+1. list every imported `YYYY-MM-DD.jsonl` date file first
+2. create a checklist covering all imported dates
+3. read each date fully before deciding what to write
+4. do not infer from titles, conversation names, or sampling alone
+5. do not apply `MEMORY.md` standards when deciding daily memory
+6. only claim daily-memory completion after every imported date has been marked reviewed
+7. when a date already has a local daily memory file, still check for missing imported bullets before deciding no change is needed
+
 Before writing any memory, first read the local memory rules from the current OpenClaw environment.
 
 Read in this order when available:
@@ -117,9 +155,11 @@ For ready-to-use prompt templates, read `{baseDir}/references/prompts.md`.
 For each relevant date:
 
 - read the imported archive entries for that day
-- decide whether anything is worth keeping
-- write only the few high-value facts, decisions, preferences, or lessons worth carrying forward
+- decide what is important enough to preserve in that day's log
+- write the few high-value facts, decisions, research takeaways, task progress points, preferences, or lessons worth keeping for future review
 - match existing OpenClaw daily memory style
+
+Daily memory is a day log, not a default-memory summary. Do not over-filter it using long-term-memory standards.
 
 Good output shape:
 
@@ -224,16 +264,21 @@ When reporting progress or completion, include:
 
 - detected source format
 - archive root written
-- archive validation result
+- import-batch validation result
+- full-archive validation result (if checked)
+- reviewed dates / total imported dates
 - which daily memory dates were updated
 - whether `MEMORY.md` candidates were only staged or also applied
 
 ## Guardrails
 
 - Do not claim imported archive compatibility unless validation passes.
+- Do not describe the current import as failed when only pre-existing archive files failed full-archive validation.
 - Do not let imported daily memory read like a profile summary.
 - Do not silently overwrite existing `MEMORY.md` facts.
 - Do not add bulky metadata into daily memory bodies.
+- Do not skip daily-memory review based only on titles, thread names, or sparse sampling.
+- Do not apply `MEMORY.md` filtering standards to daily memory distillation.
 - Do not assume unknown source formats can be handled safely without inspection.
 - Do not promote a temporary parser into the skill unless it is stable and broadly reusable.
 - Do not invent memory-writing preferences when the local OpenClaw environment already exposes them in config or existing memory files.
