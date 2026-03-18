@@ -1,0 +1,241 @@
+---
+name: chat-history-import
+description: Use when the user wants to import external chat exports into OpenClaw. This skill normalizes raw chat history into conversation-archive-compatible JSONL, then guides the model to distill daily memory and `MEMORY.md` candidates before applying merges with user confirmation.
+metadata: { "openclaw": { "emoji": "🗂️", "homepage": "https://github.com/dashhuang/openclaw-chat-history-import", "requires": { "bins": ["python3"] } } }
+---
+
+# Chat History Import
+
+Use this skill when a user wants to import chat history from Claude, ChatGPT, Slack exports, markdown logs, JSON/JSONL transcripts, or similar archives into an OpenClaw workspace.
+
+## What This Skill Owns
+
+- raw archive import into `logs/message-archive-raw/`
+- daily memory distillation into `memory/YYYY-MM-DD.md`
+- `MEMORY.md` candidate generation
+- review and apply workflow for memory merges
+
+## What Scripts Do vs. What The Model Does
+
+Scripts handle deterministic work:
+
+- inspect the source archive
+- normalize messages into the archive schema
+- validate archive compatibility
+- write review artifacts
+- apply approved memory merges
+
+The model handles semantic work:
+
+- decide what each day is worth remembering
+- rewrite imported history into the style of existing OpenClaw daily memory
+- decide what belongs in `MEMORY.md`
+- compare imported `MEMORY.md` candidates against existing `MEMORY.md`
+
+Do not try to replace this semantic step with Python heuristics.
+
+Also do not assume the bundled Python parsers can recognize every source format.
+For unknown input formats, the model may need to inspect the source and write a temporary format-specific parser.
+
+## Core Rules
+
+1. Do not import external history into `agents/<agentId>/sessions/`.
+2. Treat `logs/message-archive-raw/` as the canonical destination for imported raw chat history.
+3. Imported archive output must pass `{baseDir}/scripts/validate_archive.py`.
+4. Daily memory should merge into the existing `memory/YYYY-MM-DD.md` file for that date.
+5. Daily memory body should look like normal OpenClaw memory: concise Chinese bullets, minimal metadata, no “Claude 备份里显示” phrasing.
+6. Use a short HTML comment only to mark import provenance.
+7. `MEMORY.md` is the default memory file here and is always review-required before apply.
+
+## Import Workflow
+
+### 1. Inspect
+
+Start by inspecting the source:
+
+```bash
+python3 {baseDir}/scripts/inspect_import.py /path/to/archive-or-file
+```
+
+Use local file structure first. Use web research only as fallback for unclear formats.
+
+### 2. Normalize Raw Archive
+
+Normalize the source into the archive schema described in `{baseDir}/references/schema.md`:
+
+```bash
+python3 {baseDir}/scripts/normalize_import.py /path/to/archive --archive-root logs/message-archive-raw --workspace workspace --agent-id main --apply
+python3 {baseDir}/scripts/validate_archive.py logs/message-archive-raw
+```
+
+## Unknown Format Handling
+
+When the bundled parser does not recognize the input format, use this fallback sequence:
+
+1. Inspect the source files directly.
+2. Determine whether the structure is simple enough to map by hand.
+3. If not, write a temporary Python parser under a temp directory.
+4. Make that parser output the canonical archive JSONL shape from `{baseDir}/references/schema.md`.
+5. Run `{baseDir}/scripts/validate_archive.py` on the result before claiming success.
+
+Preferred order:
+
+1. bundled parser
+2. model-assisted direct mapping
+3. model-authored temporary parser
+
+Guardrails for temporary parsers:
+
+- only transform source data into canonical archive JSONL
+- do not write directly into `MEMORY.md`
+- do not bypass the archive validator
+- keep source-specific logic isolated; do not pollute the skill with one-off code unless the format is worth supporting permanently
+
+### 3. Distill Daily Memory
+
+This step is model-driven.
+
+Before writing any memory, first read the local memory rules from the current OpenClaw environment.
+
+Read in this order when available:
+
+1. local `openclaw.json`
+   - focus on `agents.defaults.compaction.memoryFlush.prompt`
+   - focus on `agents.defaults.compaction.memoryFlush.systemPrompt`
+2. workspace `AGENTS.md`
+   - look for memory-writing rules, what counts as worth remembering, and what to exclude
+3. existing `MEMORY.md`
+   - learn the default memory style already in use
+4. recent `memory/YYYY-MM-DD.md`
+   - learn the local daily memory writing style from actual files, not assumptions
+
+Use these local rules as the primary source of truth.
+If the local environment lacks them, then fall back to the generic guidance in this skill.
+
+For ready-to-use prompt templates, read `{baseDir}/references/prompts.md`.
+
+For each relevant date:
+
+- read the imported archive entries for that day
+- decide whether anything is worth keeping
+- write only the few high-value facts, decisions, preferences, or lessons worth carrying forward
+- match existing OpenClaw daily memory style
+
+Good output shape:
+
+```md
+# 2024-04-14
+
+<!-- imported-memory provider=claude archive=data-...zip -->
+- 开始用 Claude 辅助起草中文股东信，采用“逐段整理，最后整合全文”的工作方式。
+```
+
+Bad output shape:
+
+- profile dumps
+- long autobiographical summaries
+- “Claude 备份显示……”
+- verbose provenance in the body
+
+### 4. Distill `MEMORY.md` Candidates
+
+Choose one of these modes explicitly:
+
+1. `source-memory only`
+   Use a dedicated memory-like file from the import source when available, such as Claude `memories.json`.
+
+2. `archive-distill only`
+   Distill `MEMORY.md` candidates directly from the imported archive.
+
+3. `hybrid`
+   Use source memory as the base, then refine or supplement it from archive evidence.
+
+Default:
+
+- if source memory exists, prefer `source-memory only`
+- only use `archive-distill only` or `hybrid` when the user explicitly wants the heavier path
+
+Before choosing wording and granularity, read local `MEMORY.md` and recent daily memory files so the imported candidates match the current workspace style.
+
+Preferred user-facing wording:
+
+- call `MEMORY.md` the default memory or 默认记忆
+- only use “长期记忆” when needed to contrast it with daily logs
+- avoid treating “long-term memory” as the canonical product term
+
+Warn the user that archive-wide `MEMORY.md` distillation is slower and more dependent on model quality.
+
+### 5. Stage Review Payload
+
+After the model writes daily memory bullets and `MEMORY.md` bullets, save them in a JSON payload with this shape:
+
+```json
+{
+  "daily_memory": [
+    {
+      "date": "2024-04-14",
+      "source_provider": "claude",
+      "source_archive": "claude-export.zip",
+      "bullets": [
+        "开始用外部模型辅助起草正式中文文稿，采用“逐段整理，最后整合全文”的工作方式。"
+      ]
+    }
+  ],
+  "memory_md": [
+    {
+      "section": "关于用户",
+      "source_provider": "claude",
+      "source_archive": "claude-export.zip",
+      "bullets": [
+        "用户可在多语言环境中自然切换，个人交流常偏好中文。",
+        "长期关注科技、游戏与时事。"
+      ]
+    }
+  ]
+}
+```
+
+Then stage or apply with:
+
+```bash
+python3 {baseDir}/scripts/memory_merge.py /path/to/payload.json --review-root tmp/chat-history-import-review
+```
+
+Use `memory_md` as the preferred payload key.
+`long_term_memory` is still accepted for compatibility, but new work should use `memory_md`.
+
+### 6. Apply
+
+Daily memory can be applied directly:
+
+```bash
+python3 {baseDir}/scripts/memory_merge.py /path/to/payload.json --memory-root memory --apply-daily
+```
+
+`MEMORY.md` candidates must be confirmed first:
+
+```bash
+python3 {baseDir}/scripts/memory_merge.py /path/to/payload.json --memory-file MEMORY.md --apply-long-term
+```
+
+## Output Expectations
+
+When reporting progress or completion, include:
+
+- detected source format
+- archive root written
+- archive validation result
+- which daily memory dates were updated
+- whether `MEMORY.md` candidates were only staged or also applied
+
+## Guardrails
+
+- Do not claim imported archive compatibility unless validation passes.
+- Do not let imported daily memory read like a profile summary.
+- Do not silently overwrite existing `MEMORY.md` facts.
+- Do not add bulky metadata into daily memory bodies.
+- Do not assume unknown source formats can be handled safely without inspection.
+- Do not promote a temporary parser into the skill unless it is stable and broadly reusable.
+- Do not invent memory-writing preferences when the local OpenClaw environment already exposes them in config or existing memory files.
+
+Read `{baseDir}/references/schema.md` before changing archive output.

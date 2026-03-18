@@ -1,0 +1,37 @@
+name: validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test deps
+        run: python -m pip install --upgrade pip pyyaml
+
+      - name: Validate SKILL frontmatter
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import yaml
+          text = Path("SKILL.md").read_text(encoding="utf-8")
+          match = re.match(r"^---\n(.*?)\n---", text, re.S)
+          assert match, "missing frontmatter"
+          data = yaml.safe_load(match.group(1))
+          assert data["name"] == "chat-history-import"
+          assert "description" in data
+          assert "metadata" in data
+          print("frontmatter ok")
+          PY
+
+      - name: Compile scripts
+        run: python -m py_compile scripts/*.py
