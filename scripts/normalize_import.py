@@ -6,8 +6,8 @@ import argparse
 import json
 import zipfile
 from datetime import datetime
-from pathlib import Path
-from typing import Any
+from pathlib import Path, PurePosixPath
+from typing import Any, Iterable
 
 from archive_contract import (
     build_archive_entry,
@@ -44,8 +44,21 @@ def detect_claude_export(names: set[str]) -> bool:
     }.issubset(names)
 
 
-def detect_chatgpt_export(names: set[str]) -> bool:
+def detect_chatgpt_export_names(names: set[str]) -> bool:
     return "conversations.json" in names and not detect_claude_export(names)
+
+
+def detect_chatgpt_sharded_export_names(names: set[str]) -> bool:
+    return any(name.startswith("conversations-") and name.endswith(".json") for name in names)
+
+
+def list_chatgpt_conversation_filenames(names: Iterable[str]) -> list[str]:
+    unique = {PurePosixPath(name).name for name in names}
+    return sorted(
+        name
+        for name in unique
+        if name == "conversations.json" or (name.startswith("conversations-") and name.endswith(".json"))
+    )
 
 
 def render_message_text(message: dict[str, Any]) -> str:
@@ -62,9 +75,10 @@ def render_message_text(message: dict[str, Any]) -> str:
 
 def parse_chatgpt_message_text(message: dict[str, Any]) -> str:
     content = message.get("content") or {}
+    rendered: list[str] = []
+
     parts = content.get("parts")
     if isinstance(parts, list):
-        rendered = []
         for part in parts:
             if isinstance(part, str):
                 text = part.strip()
@@ -76,6 +90,11 @@ def parse_chatgpt_message_text(message: dict[str, Any]) -> str:
                     rendered.append(text)
         if rendered:
             return "\n\n".join(rendered).strip()
+
+    content_text = str(content.get("text") or "").strip()
+    if content_text:
+        return content_text
+
     text = str(message.get("text") or "").strip()
     if text:
         return text
@@ -216,16 +235,66 @@ def normalize_claude_export(
     return entries, manifest
 
 
-def normalize_chatgpt_export(
-    source: Path,
+def load_chatgpt_conversations_from_zip(source: Path) -> tuple[list[dict[str, Any]], str]:
+    with zipfile.ZipFile(source) as zf:
+        member_names = [name for name in zf.namelist() if not name.endswith("/")]
+        base_names = list_chatgpt_conversation_filenames(member_names)
+        selected_members: list[str] = []
+
+        if "conversations.json" in base_names:
+            for name in member_names:
+                if PurePosixPath(name).name == "conversations.json":
+                    selected_members = [name]
+                    break
+        else:
+            for base_name in base_names:
+                for name in member_names:
+                    if PurePosixPath(name).name == base_name:
+                        selected_members.append(name)
+                        break
+
+        if not selected_members:
+            raise SystemExit(f"unsupported zip format: {source}")
+
+        conversations: list[dict[str, Any]] = []
+        for member in selected_members:
+            raw = json.loads(zf.read(member).decode("utf-8"))
+            if isinstance(raw, list):
+                conversations.extend(item for item in raw if isinstance(item, dict))
+        return conversations, ("chatgpt-account-export" if len(selected_members) == 1 and PurePosixPath(selected_members[0]).name == "conversations.json" else "chatgpt-account-export-sharded")
+
+
+def load_chatgpt_conversations_from_directory(source: Path) -> tuple[list[dict[str, Any]], str]:
+    files = [p for p in source.rglob("*.json") if p.is_file()]
+    selected_files: list[Path] = []
+
+    standard = sorted(p for p in files if p.name == "conversations.json")
+    if standard:
+        selected_files = [standard[0]]
+    else:
+        selected_files = sorted(p for p in files if p.name.startswith("conversations-") and p.name.endswith(".json"))
+
+    if not selected_files:
+        raise SystemExit(f"unsupported source format: {source}")
+
+    conversations: list[dict[str, Any]] = []
+    for file_path in selected_files:
+        raw = json.loads(file_path.read_text(encoding="utf-8"))
+        if isinstance(raw, list):
+            conversations.extend(item for item in raw if isinstance(item, dict))
+    detected = "chatgpt-directory-export" if len(selected_files) == 1 and selected_files[0].name == "conversations.json" else "chatgpt-directory-export-sharded"
+    return conversations, detected
+
+
+def normalize_chatgpt_conversations(
+    conversations: list[dict[str, Any]],
     *,
+    source: Path,
+    detected_format: str,
     workspace: str,
     agent_id: str,
     provider_override: str | None,
 ) -> tuple[list[dict], dict[str, Any]]:
-    with zipfile.ZipFile(source) as zf:
-        conversations = json.loads(zf.read("conversations.json").decode("utf-8"))
-
     import_run_id = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-chat-import")
     provider = provider_override or "chatgpt"
     source_name = source.name
@@ -283,7 +352,7 @@ def normalize_chatgpt_export(
 
     manifest = {
         "source": str(source),
-        "detected_format": "chatgpt-account-export",
+        "detected_format": detected_format,
         "source_provider": provider,
         "import_run_id": import_run_id,
         "conversation_count": len(conversations),
@@ -292,6 +361,42 @@ def normalize_chatgpt_export(
         "archive_root": None,
     }
     return entries, manifest
+
+
+def normalize_chatgpt_export(
+    source: Path,
+    *,
+    workspace: str,
+    agent_id: str,
+    provider_override: str | None,
+) -> tuple[list[dict], dict[str, Any]]:
+    conversations, detected_format = load_chatgpt_conversations_from_zip(source)
+    return normalize_chatgpt_conversations(
+        conversations,
+        source=source,
+        detected_format=detected_format,
+        workspace=workspace,
+        agent_id=agent_id,
+        provider_override=provider_override,
+    )
+
+
+def normalize_chatgpt_directory(
+    source: Path,
+    *,
+    workspace: str,
+    agent_id: str,
+    provider_override: str | None,
+) -> tuple[list[dict], dict[str, Any]]:
+    conversations, detected_format = load_chatgpt_conversations_from_directory(source)
+    return normalize_chatgpt_conversations(
+        conversations,
+        source=source,
+        detected_format=detected_format,
+        workspace=workspace,
+        agent_id=agent_id,
+        provider_override=provider_override,
+    )
 
 
 def normalize_canonical_jsonl(
@@ -332,9 +437,21 @@ def normalize_canonical_jsonl(
 
 
 def normalize(source: Path, *, workspace: str, agent_id: str, provider_override: str | None) -> tuple[list[dict], dict[str, Any]]:
+    if source.is_dir():
+        rel_names = {str(path.relative_to(source)) for path in source.rglob("*") if path.is_file()}
+        base_names = {Path(name).name for name in rel_names}
+        if detect_chatgpt_export_names(base_names) or detect_chatgpt_sharded_export_names(base_names):
+            return normalize_chatgpt_directory(
+                source,
+                workspace=workspace,
+                agent_id=agent_id,
+                provider_override=provider_override,
+            )
+        raise SystemExit(f"unsupported source format: {source}")
+
     if source.suffix.lower() == ".zip":
         with zipfile.ZipFile(source) as zf:
-            names = set(zf.namelist())
+            names = {PurePosixPath(name).name for name in zf.namelist() if not name.endswith("/")}
             if detect_claude_export(names):
                 return normalize_claude_export(
                     source,
@@ -342,7 +459,7 @@ def normalize(source: Path, *, workspace: str, agent_id: str, provider_override:
                     agent_id=agent_id,
                     provider_override=provider_override,
                 )
-            if detect_chatgpt_export(names):
+            if detect_chatgpt_export_names(names) or detect_chatgpt_sharded_export_names(names):
                 return normalize_chatgpt_export(
                     source,
                     workspace=workspace,
@@ -356,74 +473,14 @@ def normalize(source: Path, *, workspace: str, agent_id: str, provider_override:
         if isinstance(raw, list) and raw and isinstance(raw[0], dict):
             sample = raw[0]
             if "mapping" in sample and ("current_node" in sample or "title" in sample):
-                tmp_zip_like = source
-                import_run_id = None
-                # Reuse the same logic with a local shim.
-                conversations = raw
-                import_run_id = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-chat-import")
-                provider = provider_override or "chatgpt"
-                source_name = source.name
-                entries: list[dict] = []
-                skipped_messages = 0
-                for conv_index, conversation in enumerate(conversations):
-                    conversation_id = str(
-                        conversation.get("id")
-                        or conversation.get("conversation_id")
-                        or conversation.get("uuid")
-                        or f"conversation-{conv_index}"
-                    )
-                    conversation_label = str(
-                        conversation.get("title")
-                        or conversation.get("name")
-                        or f"{provider}-conversation-{conv_index + 1}"
-                    )
-                    peer_id = f"{provider}:conversation:{conversation_id}"
-                    linear_messages = iter_chatgpt_linear_messages(conversation)
-                    if not linear_messages:
-                        skipped_messages += 1
-                        continue
-                    for ordinal, message in enumerate(linear_messages):
-                        role = str(message["role"])
-                        raw_message_id = message.get("message_id")
-                        message_id = str(raw_message_id) if raw_message_id else synthetic_message_id(
-                            conversation_id, message.get("timestamp_ms"), role, ordinal
-                        )
-                        speaker_name = "User" if role == "user" else "Assistant"
-                        author_name = message.get("author_name")
-                        if isinstance(author_name, str) and author_name.strip():
-                            speaker_name = author_name.strip()
-                        entries.append(
-                            build_archive_entry(
-                                timestamp_ms=message.get("timestamp_ms"),
-                                channel=provider,
-                                chat_type="direct",
-                                role=role,
-                                text=str(message["text"]),
-                                workspace=workspace,
-                                agent_id=agent_id,
-                                peer_id=peer_id,
-                                conversation_label=conversation_label,
-                                speaker_name=speaker_name,
-                                source_provider=provider,
-                                source_type="account-export",
-                                source_archive=source_name,
-                                source_conversation_id=conversation_id,
-                                source_message_id=str(raw_message_id) if raw_message_id else None,
-                                import_run_id=import_run_id,
-                                message_id=message_id,
-                            )
-                        )
-                manifest = {
-                    "source": str(tmp_zip_like),
-                    "detected_format": "chatgpt-conversations-json",
-                    "source_provider": provider,
-                    "import_run_id": import_run_id,
-                    "conversation_count": len(conversations),
-                    "entry_count": len(entries),
-                    "skipped_messages": skipped_messages,
-                    "archive_root": None,
-                }
-                return entries, manifest
+                return normalize_chatgpt_conversations(
+                    [item for item in raw if isinstance(item, dict)],
+                    source=source,
+                    detected_format="chatgpt-conversations-json",
+                    workspace=workspace,
+                    agent_id=agent_id,
+                    provider_override=provider_override,
+                )
 
     if source.suffix.lower() == ".jsonl":
         return normalize_canonical_jsonl(

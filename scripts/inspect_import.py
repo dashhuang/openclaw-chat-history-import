@@ -7,10 +7,17 @@ import json
 import zipfile
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 
 TEXT_SUFFIXES = {".json", ".jsonl", ".md", ".txt"}
+CHATGPT_METADATA_FILES = {
+    "user.json",
+    "user_settings.json",
+    "shared_conversations.json",
+    "group_chats.json",
+    "message_feedback.json",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,8 +42,20 @@ def detect_claude_export(names: set[str]) -> bool:
     }.issubset(names)
 
 
-def detect_chatgpt_export(names: set[str]) -> bool:
+def detect_chatgpt_export_names(names: set[str]) -> bool:
     return "conversations.json" in names and not detect_claude_export(names)
+
+
+def detect_chatgpt_sharded_export_names(names: set[str]) -> bool:
+    return any(name.startswith("conversations-") and name.endswith(".json") for name in names)
+
+
+def list_chatgpt_conversation_files(names: Iterable[str]) -> list[str]:
+    return sorted(
+        name
+        for name in names
+        if name == "conversations.json" or (name.startswith("conversations-") and name.endswith(".json"))
+    )
 
 
 def summarize_claude_zip(path: Path, zf: zipfile.ZipFile) -> dict[str, Any]:
@@ -78,16 +97,40 @@ def summarize_claude_zip(path: Path, zf: zipfile.ZipFile) -> dict[str, Any]:
     }
 
 
+def summarize_chatgpt_file_set(path: Path, *, names: list[str], source_type: str) -> dict[str, Any]:
+    conversation_files = list_chatgpt_conversation_files(names)
+    top_level_names = sorted(
+        name
+        for name in names
+        if "/" not in name.strip("/")
+    )
+    metadata_files = sorted(name for name in top_level_names if name in CHATGPT_METADATA_FILES)
+
+    if "conversations.json" in conversation_files:
+        detected = f"chatgpt-{source_type}-export"
+    else:
+        detected = f"chatgpt-{source_type}-export-sharded"
+
+    return {
+        "path": str(path),
+        "type": source_type,
+        "detected_format": detected,
+        "conversation_json_file_count": len(conversation_files),
+        "conversation_json_files_sample": conversation_files[:20],
+        "top_level_files": top_level_names[:60],
+        "metadata_files_present": metadata_files,
+    }
+
+
 def summarize_generic_zip(path: Path, zf: zipfile.ZipFile) -> dict[str, Any]:
-    names = sorted(zf.namelist())
+    names = sorted(name for name in zf.namelist() if not name.endswith("/"))
     name_set = set(names)
-    detected = "unknown-zip"
-    if detect_chatgpt_export(name_set):
-        detected = "chatgpt-like-export"
+    if detect_chatgpt_export_names(name_set) or detect_chatgpt_sharded_export_names(name_set):
+        return summarize_chatgpt_file_set(path, names=names, source_type="zip")
     return {
         "path": str(path),
         "type": "zip",
-        "detected_format": detected,
+        "detected_format": "unknown-zip",
         "files": names,
     }
 
@@ -151,7 +194,14 @@ def summarize_text(path: Path) -> dict[str, Any]:
 
 def summarize_directory(path: Path) -> dict[str, Any]:
     files = [p for p in path.rglob("*") if p.is_file()]
+    rel_names = sorted(str(p.relative_to(path)) for p in files)
     suffixes = Counter(p.suffix.lower() or "<none>" for p in files)
+    name_set = set(rel_names)
+    if detect_chatgpt_export_names(name_set) or detect_chatgpt_sharded_export_names(name_set):
+        report = summarize_chatgpt_file_set(path, names=rel_names, source_type="directory")
+        report["file_count"] = len(files)
+        report["suffixes"] = dict(sorted(suffixes.items()))
+        return report
     return {
         "path": str(path),
         "type": "directory",
@@ -170,7 +220,7 @@ def inspect(path: Path) -> dict[str, Any]:
 
     if path.suffix.lower() == ".zip":
         with zipfile.ZipFile(path) as zf:
-            names = set(zf.namelist())
+            names = set(name for name in zf.namelist() if not name.endswith("/"))
             if detect_claude_export(names):
                 return summarize_claude_zip(path, zf)
             return summarize_generic_zip(path, zf)
@@ -210,6 +260,7 @@ def render_text(report: dict[str, Any]) -> str:
         "item_count",
         "line_count",
         "file_count",
+        "conversation_json_file_count",
     ]:
         if key in report:
             lines.append(f"{key}={report[key]}")
@@ -221,6 +272,14 @@ def render_text(report: dict[str, Any]) -> str:
         lines.append(f"sample_keys={json.dumps(report['sample_keys'], ensure_ascii=False)}")
     if "suffixes" in report:
         lines.append(f"suffixes={json.dumps(report['suffixes'], ensure_ascii=False)}")
+    if "conversation_json_files_sample" in report:
+        lines.append(
+            f"conversation_json_files_sample={json.dumps(report['conversation_json_files_sample'], ensure_ascii=False)}"
+        )
+    if "top_level_files" in report:
+        lines.append(f"top_level_files={json.dumps(report['top_level_files'], ensure_ascii=False)}")
+    if "metadata_files_present" in report:
+        lines.append(f"metadata_files_present={json.dumps(report['metadata_files_present'], ensure_ascii=False)}")
     return "\n".join(lines)
 
 

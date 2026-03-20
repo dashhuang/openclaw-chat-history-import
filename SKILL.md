@@ -79,6 +79,33 @@ For unknown input formats, the model may need to inspect the source and write a 
 6. Use a short HTML comment only to mark import provenance.
 7. `MEMORY.md` is the default memory file here and is always review-required before apply.
 
+## Large Export Handling
+
+If the user says they already uploaded an archive, but the current chat channel only exposes a placeholder or incomplete file payload, treat that as a transport limitation first.
+
+For large ChatGPT or similar exports, guide the user toward a smaller text-focused package before retrying upload:
+
+1. unzip the export locally
+2. keep the conversation JSON files first
+3. keep optional small metadata files only when useful
+4. remove bulky attachments such as images, audio, video, PDFs, Office files, and other binary artifacts
+5. re-zip the reduced package and retry import
+
+For ChatGPT-style exports, the most important files are usually:
+
+- `conversations.json`
+- `conversations-*.json`
+- optional: `group_chats.json`
+- optional: `export_manifest.json`
+
+If the reduced archive still cannot be uploaded through the chat channel, ask for one of these instead:
+
+- a direct download URL
+- a host-local file path
+- a cloud storage link that can be fetched from the host
+
+Use a temp path or another host-local staging path for large imports rather than polluting `workspace/`.
+
 ## Import Workflow
 
 ### 1. Inspect
@@ -290,6 +317,9 @@ python3 {baseDir}/scripts/memory_merge.py /path/to/payload.json --memory-root me
 ```bash
 python3 {baseDir}/scripts/memory_merge.py /path/to/payload.json --memory-file MEMORY.md --apply-long-term
 ```
+
+After a successful import, ask the user whether they want to delete the source archive, extracted source directory, and temp files to save disk space.
+Do not delete them without explicit confirmation.
 
 ## Output Expectations
 
