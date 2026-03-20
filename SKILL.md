@@ -208,15 +208,17 @@ Read in this order when available:
    - learn the local daily memory writing style from actual files, not assumptions
 
 Use these local rules as the primary source of truth.
-If the local environment lacks them, then fall back to the generic guidance in this skill.
+If local rules conflict with anything in this skill, follow the local rules.
+The generic guidance in this skill is not an equal second source of truth; it is fallback-only scaffolding for cases where the local environment is missing rules or is still too vague to decide.
 
 For ready-to-use prompt templates, read `{baseDir}/references/prompts.md`.
 
 For each relevant date:
 
 - read the imported archive entries for that day
-- decide what is important enough to preserve in that day's log
-- write the few high-value facts, decisions, research takeaways, task progress points, preferences, or lessons worth keeping for future review
+- decide what is important enough to preserve in that day's log by applying the local OpenClaw memory rules first
+- only if those local rules are missing or too vague, fall back to the generic daily-memory heuristics bundled with this skill
+- write only the few items that survive that local-rule-first judgment
 - match existing OpenClaw daily memory style
 
 Daily memory is a day log, not a default-memory summary. Do not over-filter it using long-term-memory standards.

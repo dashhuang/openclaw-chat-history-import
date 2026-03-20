@@ -29,7 +29,9 @@ The local workspace always wins over these defaults.
 - workspace/AGENTS.md 中关于记忆写法的要求
 - 最近几天 memory/YYYY-MM-DD.md 的真实风格
 
-聚焦于：
+如果本地规则已经足够明确，就直接按本地规则判断，不要再让下面的默认条目覆盖它。
+
+只有当本地规则缺失、过于粗略、或仍不足以帮助你判断时，才把下面这些内容当作 fallback 参考：
 - 决策
 - 状态变更
 - 经验教训
@@ -42,13 +44,14 @@ The local workspace always wins over these defaults.
 如果没有值得存储的内容：NO_FLUSH
 
 要求：
-1. 只写当天新增、当天重要、以后回看有价值的内容。
-2. 不要写闲聊、寒暄、纯机械执行细节或明显无回看价值的碎片。
-3. 不要写“Claude 备份显示”“导入记录表明”之类的来源措辞。
-4. 正文风格尽量贴近当前本地 daily memory 文件。
-5. 一般输出 1-5 条简洁 bullet；只有当天明显是专题整理时才使用短标题。
-6. 不要写成长篇 profile summary。
-7. 只输出适合写进 memory/YYYY-MM-DD.md 的 Markdown 正文，不要解释。
+1. 先按本地 OpenClaw 规则判断“今天是否值得写入 daily memory”；只有本地规则不够时，才使用本模板的 fallback 判断。
+2. 只写当天新增、当天重要、以后回看有价值的内容。
+3. 不要写闲聊、寒暄、纯机械执行细节或明显无回看价值的碎片。
+4. 不要写“Claude 备份显示”“导入记录表明”之类的来源措辞。
+5. 正文风格尽量贴近当前本地 daily memory 文件。
+6. 一般输出 1-5 条简洁 bullet；只有当天明显是专题整理时才使用短标题。
+7. 不要写成长篇 profile summary。
+8. 只输出适合写进 memory/YYYY-MM-DD.md 的 Markdown 正文，不要解释。
 
 日期：{{date}}
 导入来源注释：{{html_comment}}
