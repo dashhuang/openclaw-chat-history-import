@@ -71,9 +71,9 @@ The most common use case is importing history from previous AI chat tools, espec
 
 ### ChatGPT 导出
 
-As of 2026-03-19, the usual path is:
+As of now, the usual path is:
 
-截至 2026-03-19，常见导出路径是：
+截至目前，常见导出路径是：
 
 - ChatGPT
 - `Settings`
@@ -88,9 +88,9 @@ That export usually arrives as a ZIP and commonly includes files such as `conver
 
 ### Claude 导出
 
-As of 2026-03-19, the usual path is:
+As of now, the usual path is:
 
-截至 2026-03-19，常见导出路径是：
+截至目前，常见导出路径是：
 
 - Claude
 - `Settings`
