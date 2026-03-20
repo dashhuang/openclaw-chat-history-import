@@ -1,5 +1,21 @@
 # OpenClaw Chat History Import
 
+I’m [Dash](https://x.com/DashHuang), CEO of [XD Inc.](https://2400.hk/).
+
+我是 [Dash](https://x.com/DashHuang)，[心动公司](https://2400.hk/) CEO。
+
+I built this skill because I do not want valuable long-term AI chat history and memory to stay scattered across third-party products forever. They should be brought back into an environment we control, manage, customize, and keep evolving over time.
+
+我做这个 skill，是因为我不希望长期有价值的 AI 聊天记录和记忆信息，一直分散在各种第三方产品里。它们应该被逐步收回到一个由自己控制、可管理、可定制、也能持续演进的环境里。
+
+This skill helps import past conversations from tools like ChatGPT and Claude into OpenClaw, so that old chat history can become OpenClaw's own raw archive and memory.
+
+这个 skill 的作用，就是把 ChatGPT、Claude 等工具里的过往聊天记录导入 OpenClaw，让这些历史逐步变成 OpenClaw 自己的 raw archive 和记忆。
+
+Today that system may be OpenClaw. In the future it may be something else. The important part is keeping the data in a state we control.
+
+今天这个承接系统可以是 OpenClaw，将来也可能是别的产品。关键不是某一个具体产品，而是这些数据始终处在自己可控的状态里。
+
 An OpenClaw skill bundle for turning your past AI chat history into OpenClaw's own memory.
 
 这是一个 OpenClaw skill bundle，核心用途是把你过去在其他 AI 工具里的聊天记录，导入到 OpenClaw 里，变成龙虾自己的记忆。
