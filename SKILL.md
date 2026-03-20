@@ -171,6 +171,9 @@ This step is model-driven.
 
 Before writing any daily memory, switch into Plan Mode (or an equivalent explicit checklist workflow) and review the import one date at a time.
 
+When the runtime supports subAgents or delegated parallel review, prefer using them to review imported dates one by one or in very small date batches.
+The goal is coverage and auditability, not speed alone.
+
 Use the helper script to build the review checklist whenever possible:
 
 ```bash
@@ -187,11 +190,16 @@ Required review process:
 
 1. list every imported `YYYY-MM-DD.jsonl` date file first
 2. create a checklist covering all imported dates
-3. read each date fully before deciding what to write
-4. do not infer from titles, conversation names, or sampling alone
-5. do not apply `MEMORY.md` standards when deciding daily memory
-6. only claim daily-memory completion after every imported date has been marked reviewed
-7. when a date already has a local daily memory file, still check for missing imported bullets before deciding no change is needed
+3. when subAgents are available, assign imported dates one by one, or in very small date batches, so every date has an explicit review owner
+4. read each date fully before deciding what to write
+5. do not infer from titles, conversation names, or sampling alone
+6. do not apply `MEMORY.md` standards when deciding daily memory
+7. after finishing review for one date, mark that checklist item as done immediately
+8. only claim daily-memory completion after every imported date has been marked reviewed
+9. when a date already has a local daily memory file, still check for missing imported bullets before deciding no change is needed
+
+Checklist discipline is part of the workflow, not an optional nicety.
+If a date was reviewed, the checklist should show that review explicitly.
 
 Before writing any memory, first read the local memory rules from the current OpenClaw environment.
 
