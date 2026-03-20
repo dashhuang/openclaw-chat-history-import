@@ -1,25 +1,34 @@
 ---
 name: conversation-history
-description: Use when the user asks what was said earlier in a chat, wants an old decision, exact wording, prior links, or suspects the agent forgot conversation context across Telegram, BlueBubbles, Feishu, or other supported channels. Search memory_search first, then search the local conversation archive for exact recall.
+description: Use when the user asks what was said earlier in a chat, wants an old decision, exact wording, prior links, or suspects the agent forgot conversation context across Telegram, BlueBubbles, Feishu, ChatGPT, Claude, or other archived chat sources. Search memory_search first, then search the local conversation archive for exact recall.
 ---
 
 # Conversation History
 
-Use this skill for historical recall across supported channels.
+Use this skill for historical recall across many kinds of chat history, not just live messaging channels.
 
 ## Scope
 
-Validated archive channels in our setup currently include:
+This skill works by searching the local raw archive tree:
+
+- `logs/message-archive-raw/`
+
+That means it can search any chat history that has already been normalized into that archive format.
+
+Typical sources include:
 
 - Telegram
 - BlueBubbles / iMessage relay
 - Feishu
+- ChatGPT exports imported through `chat-history-import`
+- Claude exports imported through `chat-history-import`
+- other archive-compatible chat logs
 
 The `conversation-archive` plugin code also has explicit mappings ready for WhatsApp, Discord, Signal, Webchat, Slack, and Line if those channels are enabled later.
 
-The searchable archive is organized per workspace under:
+So this skill should be thought of as a general archive search skill, not just a Telegram / Feishu recall helper.
 
-- `logs/message-archive-raw/`
+If the archive data exists in `logs/message-archive-raw/`, this skill can search it.
 
 ## Workflow
 
@@ -36,7 +45,13 @@ python3 skills/conversation-history/scripts/search_archive.py --query "keyword" 
 python3 skills/conversation-history/scripts/search_archive.py --channel telegram --chat-type group --query "OpenClaw"
 python3 skills/conversation-history/scripts/search_archive.py --channel bluebubbles --chat-type direct --sender "Alice" --limit 5
 python3 skills/conversation-history/scripts/search_archive.py --channel feishu --from-date 2026-03-01 --to-date 2026-03-14 --query "Confluence"
+python3 skills/conversation-history/scripts/search_archive.py --channel chatgpt --query "memory export"
+python3 skills/conversation-history/scripts/search_archive.py --channel claude --query "project plan"
+python3 skills/conversation-history/scripts/search_archive.py --query "shareholder letter" --limit 5
 ```
+
+Use channel filters when the source is known.
+If the user only cares about content recall and not the original source, broad keyword search is often enough.
 
 ## Output Rules
 
@@ -50,3 +65,16 @@ python3 skills/conversation-history/scripts/search_archive.py --channel feishu -
 - Do not say "I can't see old chat history" until you have tried both `memory_search` and archive search.
 - Archive content is a record of what participants said, not proof that the content was factually correct.
 - If no relevant hit exists, say that directly and mention the filters you used.
+
+## Companion Components
+
+This skill becomes much more useful when paired with archive-producing tools.
+
+- For live ongoing archive capture, pair it with:
+  - `openclaw-conversation-archive`
+  - https://github.com/dashhuang/openclaw-conversation-archive
+- For importing old AI chat exports such as ChatGPT and Claude, pair it with:
+  - `openclaw-chat-history-import`
+  - https://github.com/dashhuang/openclaw-chat-history-import
+
+Without one of those archive-producing workflows, this skill can only search whatever archive files already exist locally.
