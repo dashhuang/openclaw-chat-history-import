@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import zipfile
 from collections import Counter
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -18,6 +20,7 @@ CHATGPT_METADATA_FILES = {
     "group_chats.json",
     "message_feedback.json",
 }
+TELEGRAM_MESSAGES_HTML_RE = re.compile(r"^messages(?:\d+)?\.html$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,6 +59,49 @@ def list_chatgpt_conversation_files(names: Iterable[str]) -> list[str]:
         for name in names
         if name == "conversations.json" or (name.startswith("conversations-") and name.endswith(".json"))
     )
+
+
+def detect_telegram_desktop_export(names: Iterable[str]) -> bool:
+    return any(TELEGRAM_MESSAGES_HTML_RE.match(Path(name).name) for name in names)
+
+
+class TelegramTitleParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.title: str | None = None
+        self.capture_depth = 0
+        self.buffer: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs_list: list[tuple[str, str | None]]) -> None:
+        attrs = dict(attrs_list)
+        classes = attrs.get("class", "").split()
+        if self.title is None and tag == "div" and classes == ["text", "bold"]:
+            self.capture_depth = 1
+            self.buffer = []
+            return
+        if self.capture_depth > 0:
+            self.capture_depth += 1
+            if tag == "br":
+                self.buffer.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if self.capture_depth > 0:
+            self.buffer.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.capture_depth <= 0:
+            return
+        self.capture_depth -= 1
+        if self.capture_depth == 0 and self.title is None:
+            title = " ".join("".join(self.buffer).split()).strip()
+            if title:
+                self.title = title
+
+
+def extract_telegram_export_title(path: Path) -> str | None:
+    parser = TelegramTitleParser()
+    parser.feed(path.read_text(encoding="utf-8", errors="ignore"))
+    return parser.title
 
 
 def summarize_claude_zip(path: Path, zf: zipfile.ZipFile) -> dict[str, Any]:
@@ -197,6 +243,19 @@ def summarize_directory(path: Path) -> dict[str, Any]:
     rel_names = sorted(str(p.relative_to(path)) for p in files)
     suffixes = Counter(p.suffix.lower() or "<none>" for p in files)
     name_set = set(rel_names)
+    if detect_telegram_desktop_export(rel_names):
+        html_files = sorted(name for name in rel_names if TELEGRAM_MESSAGES_HTML_RE.match(Path(name).name))
+        first_html = path / html_files[0]
+        return {
+            "path": str(path),
+            "type": "directory",
+            "detected_format": "telegram-desktop-html-directory",
+            "file_count": len(files),
+            "html_file_count": len(html_files),
+            "chat_title": extract_telegram_export_title(first_html),
+            "html_files_sample": html_files[:20],
+            "suffixes": dict(sorted(suffixes.items())),
+        }
     if detect_chatgpt_export_names(name_set) or detect_chatgpt_sharded_export_names(name_set):
         report = summarize_chatgpt_file_set(path, names=rel_names, source_type="directory")
         report["file_count"] = len(files)

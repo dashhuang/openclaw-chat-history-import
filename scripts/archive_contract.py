@@ -130,15 +130,24 @@ def archive_relative_path(entry: dict) -> Path:
     return Path(entry["channel"]) / entry["chat_type"] / entry["conversation_slug"] / f"{entry['local_date']}.jsonl"
 
 
-def dedupe_key(entry: dict) -> tuple[str, str, str, str, str, str]:
-    message_id = str(entry.get("message_id") or entry.get("timestamp_utc") or entry.get("timestamp_local") or "")
+def dedupe_identity(entry: dict) -> str:
+    if entry.get("source_message_id"):
+        return f"smid:{entry['source_message_id']}"
+    if entry.get("message_id"):
+        return f"mid:{entry['message_id']}"
+    timestamp = str(entry.get("timestamp_utc") or entry.get("timestamp_local") or "")
+    text = normalize_text(str(entry.get("text") or ""))
+    return f"fallback:{timestamp}|{text}"
+
+
+def dedupe_key(entry: dict) -> tuple[str, str, str, str, str]:
+    peer = str(entry.get("peer_id") or entry.get("conversation_slug") or entry.get("conversation_label") or "")
     return (
         str(entry.get("channel") or ""),
         str(entry.get("chat_type") or ""),
-        str(entry.get("peer_id") or ""),
+        peer,
         str(entry.get("role") or ""),
-        message_id,
-        str(entry.get("text") or ""),
+        dedupe_identity(entry),
     )
 
 

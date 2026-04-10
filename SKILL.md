@@ -6,9 +6,10 @@ metadata: { "openclaw": { "emoji": "🗂️", "homepage": "https://github.com/da
 
 # Chat History Import
 
-Use this skill when a user wants to import chat history from Claude, ChatGPT, Slack exports, markdown logs, JSON/JSONL transcripts, or similar archives into an OpenClaw workspace.
+Use this skill when a user wants to import chat history from Claude, ChatGPT, Telegram Desktop exports, Slack exports, markdown logs, JSON/JSONL transcripts, or similar archives into an OpenClaw workspace.
 
 The most common source formats for this skill are ChatGPT exports and Claude exports.
+Telegram Desktop HTML exports are also supported when the user wants to backfill a Telegram direct chat or group into OpenClaw's raw archive.
 If the user has not exported data yet, suggest the usual official export entry points first:
 
 - ChatGPT: `Settings -> Data Controls -> Export`

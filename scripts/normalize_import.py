@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import zipfile
 from datetime import datetime
+from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
@@ -15,6 +17,11 @@ from archive_contract import (
     synthetic_message_id,
     write_archive_entries,
 )
+
+
+TELEGRAM_MESSAGES_HTML_RE = re.compile(r"^messages(?:\d+)?\.html$")
+TELEGRAM_EXPORT_ID_RE = re.compile(r"^message-?(\d+)$")
+VOID_HTML_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,6 +37,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workspace", default="workspace", help="Workspace label to embed in archive entries.")
     parser.add_argument("--agent-id", default="main", help="Agent id to embed in archive entries.")
     parser.add_argument("--provider", help="Override source provider when auto-detection is weak.")
+    parser.add_argument(
+        "--chat-type",
+        choices=["direct", "group", "channel"],
+        help="Override chat type when the source format does not encode one.",
+    )
+    parser.add_argument("--peer-id", help="Override peer/chat id when the source format does not encode one.")
+    parser.add_argument("--conversation-label", help="Override human-readable conversation label.")
+    parser.add_argument(
+        "--assistant-name",
+        action="append",
+        default=[],
+        help="Speaker name to treat as assistant. Repeatable.",
+    )
+    parser.add_argument("--out-jsonl", help="Write normalized canonical entries to a JSONL file.")
     parser.add_argument("--apply", action="store_true", help="Write archive files instead of dry-run only.")
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of text.")
     return parser.parse_args()
@@ -59,6 +80,180 @@ def list_chatgpt_conversation_filenames(names: Iterable[str]) -> list[str]:
         for name in unique
         if name == "conversations.json" or (name.startswith("conversations-") and name.endswith(".json"))
     )
+
+
+def detect_telegram_desktop_export(names: Iterable[str]) -> bool:
+    return any(TELEGRAM_MESSAGES_HTML_RE.match(PurePosixPath(name).name) for name in names)
+
+
+class TelegramHTMLParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.messages: list[dict[str, Any]] = []
+        self.current: dict[str, Any] | None = None
+        self.div_depth = 0
+        self.active_capture: dict[str, Any] | None = None
+        self.last_from_name: str | None = None
+
+    def _start_capture(self, target: str) -> None:
+        self.active_capture = {"target": target, "depth": 1, "buffer": []}
+
+    def _finish_capture(self) -> None:
+        if self.active_capture is None or self.current is None:
+            self.active_capture = None
+            return
+        target = self.active_capture["target"]
+        text = "".join(self.active_capture["buffer"]).replace("\xa0", " ")
+        text = re.sub(r"\s+\n", "\n", text)
+        text = re.sub(r"\n\s+", "\n", text)
+        text = re.sub(r"[ \t]+", " ", text).strip()
+        if target == "from_name":
+            if text:
+                self.current["from_name"] = text
+        elif target == "text":
+            if text:
+                self.current.setdefault("texts", []).append(text)
+        elif target == "reply_to":
+            if text:
+                self.current["reply_to"] = text
+        elif target == "media_title":
+            if text:
+                self.current.setdefault("media_titles", []).append(text)
+        elif target == "media_description":
+            if text:
+                self.current.setdefault("media_descriptions", []).append(text)
+        elif target == "media_status":
+            if text:
+                self.current.setdefault("media_statuses", []).append(text)
+        self.active_capture = None
+
+    def handle_starttag(self, tag: str, attrs_list: list[tuple[str, str | None]]) -> None:
+        attrs = dict(attrs_list)
+        classes = attrs.get("class", "").split()
+
+        if self.current is None and tag == "div" and "message" in classes:
+            self.current = {"classes": classes, "id": attrs.get("id"), "texts": []}
+            self.div_depth = 1
+            return
+
+        if self.current is not None and tag == "div":
+            self.div_depth += 1
+
+        if self.active_capture is not None:
+            if tag == "br":
+                self.active_capture["buffer"].append("\n")
+                return
+            if tag not in VOID_HTML_TAGS:
+                self.active_capture["depth"] += 1
+            return
+
+        if self.current is None:
+            return
+
+        if tag == "div":
+            class_name = attrs.get("class", "")
+            if class_name == "from_name":
+                self._start_capture("from_name")
+                return
+            if class_name == "text":
+                self._start_capture("text")
+                return
+            if class_name == "reply_to details":
+                self._start_capture("reply_to")
+                return
+            if class_name == "title bold":
+                self._start_capture("media_title")
+                return
+            if class_name == "description":
+                self._start_capture("media_description")
+                return
+            if class_name == "status details":
+                self._start_capture("media_status")
+                return
+
+        if "date" in classes and "details" in classes and attrs.get("title") and not self.current.get("date_title"):
+            self.current["date_title"] = attrs["title"]
+
+    def handle_data(self, data: str) -> None:
+        if self.active_capture is not None:
+            self.active_capture["buffer"].append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.active_capture is not None:
+            if tag not in VOID_HTML_TAGS:
+                self.active_capture["depth"] -= 1
+                if self.active_capture["depth"] == 0:
+                    self._finish_capture()
+
+        if self.current is None:
+            return
+
+        if tag == "div":
+            self.div_depth -= 1
+
+        if self.div_depth == 0:
+            message = self.current
+            self.current = None
+            if "service" in message.get("classes", []):
+                return
+            if not message.get("from_name") and "joined" in message.get("classes", []) and self.last_from_name:
+                message["from_name"] = self.last_from_name
+            if message.get("from_name"):
+                self.last_from_name = message["from_name"]
+            self.messages.append(message)
+
+
+def natural_html_key(path: Path) -> tuple[int, int]:
+    if path.name == "messages.html":
+        return (0, 0)
+    match = re.fullmatch(r"messages(\d+)\.html", path.name)
+    return (1, int(match.group(1)) if match else 10**9)
+
+
+def normalize_telegram_export_message_id(raw_id: object) -> str | None:
+    match = TELEGRAM_EXPORT_ID_RE.fullmatch(str(raw_id or "").strip())
+    return match.group(1) if match else None
+
+
+def parse_telegram_export_timestamp(raw_value: object) -> int | None:
+    value = str(raw_value or "").strip()
+    if not value:
+        return None
+    for fmt in ("%d.%m.%Y %H:%M:%S UTC%z", "%d.%m.%Y %H:%M:%S %z"):
+        try:
+            return int(datetime.strptime(value, fmt).timestamp() * 1000)
+        except ValueError:
+            continue
+    return None
+
+
+def normalize_telegram_media_text(message: dict[str, Any]) -> str:
+    titles = [str(item).strip() for item in message.get("media_titles") or [] if str(item).strip()]
+    descriptions = [
+        str(item).strip()
+        for item in message.get("media_descriptions") or []
+        if str(item).strip() and "Not included, change data exporting settings to download." not in str(item)
+    ]
+    statuses = [str(item).strip() for item in message.get("media_statuses") or [] if str(item).strip()]
+    title = titles[0] if titles else "Media"
+    details = descriptions + statuses
+    if details:
+        return f"[Media] {title} | {', '.join(details)}"
+    return f"[Media] {title}"
+
+
+def extract_telegram_export_title(source: Path) -> str | None:
+    first_page = source / "messages.html"
+    if not first_page.exists():
+        return None
+    match = re.search(
+        r'<div class="text bold">\s*(.*?)\s*</div>',
+        first_page.read_text(encoding="utf-8", errors="ignore"),
+        re.S,
+    )
+    if not match:
+        return None
+    return re.sub(r"\s+", " ", match.group(1)).strip() or None
 
 
 def render_message_text(message: dict[str, Any]) -> str:
@@ -399,6 +594,92 @@ def normalize_chatgpt_directory(
     )
 
 
+def normalize_telegram_desktop_export(
+    source: Path,
+    *,
+    workspace: str,
+    agent_id: str,
+    provider_override: str | None,
+    chat_type_override: str | None,
+    peer_id_override: str | None,
+    conversation_label_override: str | None,
+    assistant_names: Iterable[str],
+) -> tuple[list[dict], dict[str, Any]]:
+    if not peer_id_override:
+        raise SystemExit("telegram desktop import requires --peer-id")
+
+    html_files = sorted(
+        (path for path in source.iterdir() if path.is_file() and TELEGRAM_MESSAGES_HTML_RE.match(path.name)),
+        key=natural_html_key,
+    )
+    if not html_files:
+        raise SystemExit(f"unsupported source format: {source}")
+
+    import_run_id = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S-chat-import")
+    provider = provider_override or "telegram"
+    chat_type = chat_type_override or "group"
+    peer_id = str(peer_id_override)
+    export_title = extract_telegram_export_title(source)
+    conversation_label = conversation_label_override or export_title or f"telegram:{chat_type}:{peer_id}"
+    assistant_name_set = {name.strip() for name in assistant_names if str(name).strip()}
+    entries: list[dict] = []
+    skipped_messages = 0
+
+    for html_file in html_files:
+        parser = TelegramHTMLParser()
+        parser.feed(html_file.read_text(encoding="utf-8", errors="ignore"))
+        for ordinal, message in enumerate(parser.messages):
+            raw_message_id = normalize_telegram_export_message_id(message.get("id"))
+            from_name = str(message.get("from_name") or "").strip()
+            role = "assistant" if from_name and from_name in assistant_name_set else "user"
+            speaker_name = from_name or ("Assistant" if role == "assistant" else "User")
+            texts = [str(item).strip() for item in message.get("texts") or [] if str(item).strip()]
+            text = "\n\n".join(texts).strip() if texts else normalize_telegram_media_text(message)
+            if not text:
+                skipped_messages += 1
+                continue
+            timestamp_ms = parse_telegram_export_timestamp(message.get("date_title"))
+            message_id = raw_message_id or synthetic_message_id(
+                html_file.name, ordinal, from_name, message.get("date_title"), text[:80]
+            )
+            entries.append(
+                build_archive_entry(
+                    timestamp_ms=timestamp_ms,
+                    channel="telegram",
+                    chat_type=chat_type,
+                    role=role,
+                    text=text,
+                    workspace=workspace,
+                    agent_id=agent_id,
+                    peer_id=peer_id,
+                    conversation_label=conversation_label,
+                    speaker_name=speaker_name,
+                    speaker_id=None,
+                    source_provider=provider,
+                    source_type="telegram-desktop-html-export",
+                    source_archive=source.name,
+                    source_conversation_id=peer_id,
+                    source_message_id=raw_message_id,
+                    import_run_id=import_run_id,
+                    message_id=message_id,
+                )
+            )
+
+    manifest = {
+        "source": str(source),
+        "detected_format": "telegram-desktop-html-directory",
+        "source_provider": provider,
+        "import_run_id": import_run_id,
+        "html_file_count": len(html_files),
+        "entry_count": len(entries),
+        "skipped_messages": skipped_messages,
+        "archive_root": None,
+        "conversation_label": conversation_label,
+        "peer_id": peer_id,
+    }
+    return entries, manifest
+
+
 def normalize_canonical_jsonl(
     source: Path,
     *,
@@ -436,10 +717,31 @@ def normalize_canonical_jsonl(
     return entries, manifest
 
 
-def normalize(source: Path, *, workspace: str, agent_id: str, provider_override: str | None) -> tuple[list[dict], dict[str, Any]]:
+def normalize(
+    source: Path,
+    *,
+    workspace: str,
+    agent_id: str,
+    provider_override: str | None,
+    chat_type_override: str | None = None,
+    peer_id_override: str | None = None,
+    conversation_label_override: str | None = None,
+    assistant_names: Iterable[str] = (),
+) -> tuple[list[dict], dict[str, Any]]:
     if source.is_dir():
         rel_names = {str(path.relative_to(source)) for path in source.rglob("*") if path.is_file()}
         base_names = {Path(name).name for name in rel_names}
+        if detect_telegram_desktop_export(rel_names):
+            return normalize_telegram_desktop_export(
+                source,
+                workspace=workspace,
+                agent_id=agent_id,
+                provider_override=provider_override,
+                chat_type_override=chat_type_override,
+                peer_id_override=peer_id_override,
+                conversation_label_override=conversation_label_override,
+                assistant_names=assistant_names,
+            )
         if detect_chatgpt_export_names(base_names) or detect_chatgpt_sharded_export_names(base_names):
             return normalize_chatgpt_directory(
                 source,
@@ -506,7 +808,17 @@ def main() -> int:
         workspace=args.workspace,
         agent_id=args.agent_id,
         provider_override=args.provider,
+        chat_type_override=args.chat_type,
+        peer_id_override=args.peer_id,
+        conversation_label_override=args.conversation_label,
+        assistant_names=args.assistant_name,
     )
+    if args.out_jsonl:
+        out_path = Path(args.out_jsonl).expanduser()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w", encoding="utf-8") as handle:
+            for entry in entries:
+                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
     if args.apply:
         result = write_archive_entries(archive_root, entries)
         manifest.update(result)

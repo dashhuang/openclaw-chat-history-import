@@ -64,6 +64,7 @@ This bundle is designed for interactive, review-first migration from Claude expo
 ## 常见来源
 
 The most common use case is importing history from previous AI chat tools, especially ChatGPT and Claude.
+It now also supports Telegram Desktop HTML exports when you want to backfill a Telegram direct chat or group into the same archive tree used by OpenClaw's live `conversation-archive` plugin.
 
 最常见的使用场景，是把你在其他 AI 聊天工具里的旧历史导入进来，尤其是 ChatGPT 和 Claude。
 
@@ -104,6 +105,29 @@ That export also typically arrives as a ZIP and may include files such as `conve
 If the source is not ChatGPT or Claude, this bundle can still help, but the import may need model-assisted format inspection or a temporary parser.
 
 如果来源不是 ChatGPT 或 Claude，这个 bundle 也仍然可以尝试导入，只是更可能需要模型辅助识别格式，或者临时写一个 parser。
+
+### Telegram Desktop export
+
+### Telegram Desktop 导出
+
+Telegram Desktop exports usually arrive as a directory containing `messages.html`, `messages2.html`, and so on.
+
+Telegram Desktop 的导出通常是一个目录，里面包含 `messages.html`、`messages2.html` 等文件。
+
+Use the normal inspect and normalize flow, but provide the target OpenClaw chat identity explicitly so the imported history lands in the canonical Telegram archive path:
+
+检查和导入时，额外提供目标 OpenClaw chat identity，这样历史才会落到正确的 Telegram archive 路径里：
+
+```bash
+python3 scripts/inspect_import.py /path/to/ChatExport_xxx
+python3 scripts/normalize_import.py /path/to/ChatExport_xxx \
+  --workspace workspace-food-group \
+  --agent-id food-group \
+  --chat-type group \
+  --peer-id -1003778432310 \
+  --assistant-name Cindy \
+  --apply
+```
 
 ## Included Skills
 
